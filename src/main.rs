@@ -20,7 +20,7 @@ async fn main() {
 }
 
 async fn hello() -> String {
-    format!("Hello!")
+    "Hello!".to_string()
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -69,7 +69,7 @@ fn get_valid_locations(
     }
 
     for (location_id, listings) in listings.entries() {
-        if let Some((listing_ids, total_price)) = search_location(&listings, &vehicle_lengths) {
+        if let Some((listing_ids, total_price)) = search_location(listings, &vehicle_lengths) {
             results.push(ResponseListing {
                 location_id,
                 listing_ids,
@@ -89,7 +89,13 @@ fn search_location(
     let mut best_listings: Option<(Vec<&'static str>, u32)> = None;
     let mut assignment = vec![0; vehicle_lengths.len()];
 
-    find_best_listings(0, &mut assignment, listings, vehicle_lengths, &mut best_listings);
+    find_best_listings(
+        0,
+        &mut assignment,
+        listings,
+        vehicle_lengths,
+        &mut best_listings,
+    );
     best_listings
 }
 
@@ -101,14 +107,17 @@ fn find_best_listings(
     listing_assignments: &mut [usize],
     listings: &[Listing],
     vehicles: &[u32],
-    best_listings: &mut Option<(Vec<&'static str>, u32)>
+    best_listings: &mut Option<(Vec<&'static str>, u32)>,
 ) {
     // the base case is when every vehicle has been mapped to a listing
     if vehicle_index == vehicles.len() {
         // tracks which vehicles are mapped to each listing index
-        let mut listing_vehicle_map: HashMap<usize, Vec<u32>> = HashMap::new(); 
+        let mut listing_vehicle_map: HashMap<usize, Vec<u32>> = HashMap::new();
         for (vehicle, &listing_index) in vehicles.iter().zip(listing_assignments.iter()) {
-            listing_vehicle_map.entry(listing_index).or_default().push(vehicle.clone());
+            listing_vehicle_map
+                .entry(listing_index)
+                .or_default()
+                .push(*vehicle);
         }
 
         // validate each listing assignment
@@ -119,8 +128,14 @@ fn find_best_listings(
         }
 
         // track the current best listing
-        let total_price: u32 = listing_vehicle_map.keys().map(|&idx| listings[idx].price_in_cents).sum();
-        let listing_ids: Vec<&'static str> = listing_vehicle_map.keys().map(|&idx| listings[idx].id).collect();
+        let total_price: u32 = listing_vehicle_map
+            .keys()
+            .map(|&idx| listings[idx].price_in_cents)
+            .sum();
+        let listing_ids: Vec<&'static str> = listing_vehicle_map
+            .keys()
+            .map(|&idx| listings[idx].id)
+            .collect();
         if best_listings.is_none() || total_price < best_listings.as_ref().unwrap().1 {
             *best_listings = Some((listing_ids, total_price));
         }
@@ -130,7 +145,13 @@ fn find_best_listings(
     // run the backtracking to try every combination of listing assignments
     for listing_index in 0..listings.len() {
         listing_assignments[vehicle_index] = listing_index;
-        find_best_listings(vehicle_index + 1, listing_assignments, listings, vehicles, best_listings);
+        find_best_listings(
+            vehicle_index + 1,
+            listing_assignments,
+            listings,
+            vehicles,
+            best_listings,
+        );
     }
 }
 
@@ -345,36 +366,30 @@ mod tests {
 
     #[test]
     fn perfect_fit_many_vehicles() {
-        let vehicles = vec![
-            VehicleRequest {
-                length: 5,
-                quantity: 10,
-            },
-        ];
+        let vehicles = vec![VehicleRequest {
+            length: 5,
+            quantity: 10,
+        }];
         let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
         assert_eq!(result.len(), 1);
     }
 
     #[test]
     fn too_many_vehicles() {
-        let vehicles = vec![
-            VehicleRequest {
-                length: 5,
-                quantity: 11,
-            },
-        ];
+        let vehicles = vec![VehicleRequest {
+            length: 5,
+            quantity: 11,
+        }];
         let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
         assert_eq!(result.len(), 0);
     }
 
     #[test]
     fn two_vehicles_same_size_two_listings() {
-        let reqs = vec![
-            VehicleRequest {
-                length: 20,
-                quantity: 2,
-            },
-        ];
+        let reqs = vec![VehicleRequest {
+            length: 20,
+            quantity: 2,
+        }];
         let result = get_valid_locations(&reqs, &TEST_LISTINGS);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location_id, "location_id_1");
@@ -402,16 +417,14 @@ mod tests {
 
     #[test]
     fn cheaper_listing_gets_priority() {
-        let reqs = vec![
-            VehicleRequest {
-                length: 100,
-                quantity: 10,
-            },
-        ];
+        let reqs = vec![VehicleRequest {
+            length: 100,
+            quantity: 10,
+        }];
         let result = get_valid_locations(&reqs, &CHEAP_SECOND_LOCATION_LISTINGS);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location_id, "location_id_1");
         assert_eq!(result[0].listing_ids.len(), 1);
         assert_eq!(result[0].listing_ids, vec!["listing_id_2"]);
-    }    
+    }
 }
