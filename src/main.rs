@@ -3,8 +3,7 @@ mod listings_data;
 use std::collections::HashMap;
 
 use axum::{
-    Json, Router,
-    routing::{get, post},
+    http::StatusCode, routing::{get, post}, Json, Router
 };
 use listings_data::LISTINGS;
 use serde::{Deserialize, Serialize};
@@ -49,16 +48,17 @@ struct ResponseListing {
 
 async fn multi_vehicle_search(
     Json(vehicles): Json<Vec<VehicleRequest>>,
-) -> Json<Vec<ResponseListing>> {
+) -> Result<Json<Vec<ResponseListing>>, StatusCode> {
     tracing::info!("request: {:?}", vehicles);
-    let valid_locations = get_valid_locations(&vehicles, &LISTINGS);
-    Json(valid_locations)
+
+    let valid_locations = get_valid_locations(&vehicles, &LISTINGS)?;
+    Ok(Json(valid_locations))
 }
 
 fn get_valid_locations(
     vehicles_request: &[VehicleRequest],
     listings: &phf::Map<&'static str, &'static [Listing]>,
-) -> Vec<ResponseListing> {
+) -> Result<Vec<ResponseListing>, StatusCode> {
     let mut results = Vec::new();
 
     // split out vehicle requests into just the length for each vehicle
@@ -69,6 +69,10 @@ fn get_valid_locations(
         for _ in 0..vehicle_request.quantity {
             vehicle_lengths.push(vehicle_request.length);
         }
+    }
+
+    if vehicle_lengths.len() > 5 {
+        return Err(StatusCode::BAD_REQUEST);
     }
 
     for (location_id, listings) in listings.entries() {
@@ -82,7 +86,7 @@ fn get_valid_locations(
     }
 
     results.sort_by_key(|response_listing| response_listing.total_price_in_cents);
-    results
+    Ok(results)
 }
 
 fn search_location(
@@ -231,7 +235,7 @@ mod tests {
             length: 10,
             quantity: 1,
         }];
-        let response = get_valid_locations(&vehicles, &LISTINGS);
+        let response = get_valid_locations(&vehicles, &LISTINGS).unwrap();
         assert_eq!(response.len(), 365);
 
         assert_eq!(
@@ -271,7 +275,7 @@ mod tests {
             length: 100,
             quantity: 1,
         }];
-        let result = get_valid_locations(&vehicles, &LISTINGS);
+        let result = get_valid_locations(&vehicles, &LISTINGS).unwrap();
         assert_eq!(result.len(), 0);
     }
 
@@ -281,7 +285,7 @@ mod tests {
             length: 10,
             quantity: 2,
         }];
-        let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
+        let result = get_valid_locations(&vehicles, &TEST_LISTINGS).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].location_id, "location_id_2"); // location 2 is cheaper
         assert_eq!(result[1].location_id, "location_id_1");
@@ -293,7 +297,7 @@ mod tests {
             length: 10,
             quantity: 1,
         }];
-        let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
+        let result = get_valid_locations(&vehicles, &TEST_LISTINGS).unwrap();
         assert_eq!(result.len(), 2);
         assert!(result[0].listing_ids.len() == 1);
     }
@@ -310,7 +314,7 @@ mod tests {
                 quantity: 1,
             },
         ];
-        let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
+        let result = get_valid_locations(&vehicles, &TEST_LISTINGS).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location_id, "location_id_1");
     }
@@ -327,7 +331,7 @@ mod tests {
                 quantity: 1,
             },
         ];
-        let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
+        let result = get_valid_locations(&vehicles, &TEST_LISTINGS).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location_id, "location_id_1");
     }
@@ -343,7 +347,7 @@ mod tests {
                 quantity: 1,
             },
         ];
-        let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
+        let result = get_valid_locations(&vehicles, &TEST_LISTINGS).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location_id, "location_id_1");
         assert_eq!(result[0].listing_ids, vec!["listing_id_1"]);
@@ -361,30 +365,20 @@ mod tests {
                 quantity: 1,
             },
         ];
-        let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
+        let result = get_valid_locations(&vehicles, &TEST_LISTINGS).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location_id, "location_id_1");
         assert_eq!(result[0].listing_ids.len(), 2);
     }
 
     #[test]
-    fn perfect_fit_many_vehicles() {
-        let vehicles = vec![VehicleRequest {
-            length: 5,
-            quantity: 10,
-        }];
-        let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
     fn too_many_vehicles() {
         let vehicles = vec![VehicleRequest {
             length: 5,
-            quantity: 11,
+            quantity: 6,
         }];
         let result = get_valid_locations(&vehicles, &TEST_LISTINGS);
-        assert_eq!(result.len(), 0);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -393,7 +387,7 @@ mod tests {
             length: 20,
             quantity: 2,
         }];
-        let result = get_valid_locations(&reqs, &TEST_LISTINGS);
+        let result = get_valid_locations(&reqs, &TEST_LISTINGS).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location_id, "location_id_1");
         assert_eq!(result[0].listing_ids.len(), 2);
@@ -422,9 +416,9 @@ mod tests {
     fn cheaper_listing_gets_priority() {
         let reqs = vec![VehicleRequest {
             length: 100,
-            quantity: 10,
+            quantity: 5,
         }];
-        let result = get_valid_locations(&reqs, &CHEAP_SECOND_LOCATION_LISTINGS);
+        let result = get_valid_locations(&reqs, &CHEAP_SECOND_LOCATION_LISTINGS).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].location_id, "location_id_1");
         assert_eq!(result[0].listing_ids.len(), 1);
