@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
+
     let app = Router::new()
         .route("/", get(hello))
         .route("/", post(multi_vehicle_search));
@@ -23,7 +25,7 @@ async fn hello() -> String {
     "Hello!".to_string()
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Debug)]
 struct VehicleRequest {
     length: u32,
     quantity: u32,
@@ -48,6 +50,7 @@ struct ResponseListing {
 async fn multi_vehicle_search(
     Json(vehicles): Json<Vec<VehicleRequest>>,
 ) -> Json<Vec<ResponseListing>> {
+    tracing::info!("request: {:?}", vehicles);
     let valid_locations = get_valid_locations(&vehicles, &LISTINGS);
     Json(valid_locations)
 }
